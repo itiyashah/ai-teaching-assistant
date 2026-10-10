@@ -1,0 +1,19 @@
+# Environment variables
+.env
+
+# Local Databases (SQLite or old JSON files)
+*.db
+*.json
+*.sqlite3
+
+# Python cache and build files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+env/
+
+# Local Vector Database (Chroma)
+chroma_db/
+.chroma/

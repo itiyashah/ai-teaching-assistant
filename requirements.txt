@@ -1,0 +1,10 @@
+streamlit
+langchain
+langchain-groq
+langgraph
+chromadb
+pypdf
+python-dotenv
+sqlalchemy
+psycopg2-binary
+langchain-core

@@ -1,6 +1,5 @@
-import os
 from datetime import datetime
-from dotenv import load_dotenv
+import os
 from sqlalchemy import (
     Boolean,
     Column,
@@ -12,25 +11,26 @@ from sqlalchemy import (
     create_engine,
 )
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
+import streamlit as st
 
-load_dotenv()
+# Safely fetch database URL from Streamlit Cloud Secrets or Environment Variables
+DATABASE_URL = None
+try:
+  if "POSTGRES_URL" in st.secrets:
+    DATABASE_URL = st.secrets["POSTGRES_URL"]
+except Exception:
+  pass
 
-# Fallback to local SQLite DB if POSTGRES_URL isn't set in .env
-
-
-DATABASE_URL = os.getenv("POSTGRES_URL", "sqlite:///./production_ta.db")
+if not DATABASE_URL:
+  DATABASE_URL = os.getenv("POSTGRES_URL", "sqlite:///./production_ta.db")
 
 # Force SQLAlchemy to use psycopg2 driver if connecting to PostgreSQL
 if DATABASE_URL.startswith("postgresql://"):
-  DATABASE_URL = DATABASE_URL.replace(
-      "postgresql://", "postgresql+psycopg2://", 1
-  )
+  DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
 
-# SQLite needs a specific thread flag; PostgreSQL does not
+# Engine setup based on database type
 if DATABASE_URL.startswith("sqlite"):
-  engine = create_engine(
-      DATABASE_URL, connect_args={"check_same_thread": False}
-  )
+  engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 else:
   engine = create_engine(
       DATABASE_URL, pool_size=10, max_overflow=20, pool_pre_ping=True
@@ -43,58 +43,36 @@ Base = declarative_base()
 # --- DATABASE MODELS ---
 class User(Base):
   __tablename__ = "users"
-
   id = Column(Integer, primary_key=True, index=True)
-  username = Column(String(100), unique=True, index=True, nullable=False)
-  created_at = Column(DateTime, default=datetime.utcnow)
-
-  conversations = relationship(
-      "Conversation", back_populates="owner", cascade="all, delete-orphan"
-  )
-  weak_topics = relationship(
-      "WeakTopic", back_populates="owner", cascade="all, delete-orphan"
-  )
+  username = Column(String, unique=True, index=True, nullable=False)
 
 
 class Conversation(Base):
   __tablename__ = "conversations"
-
-  id = Column(String(50), primary_key=True, index=True)
+  id = Column(String, primary_key=True, index=True)
   user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-  title = Column(String(255), default="New Chat")
+  title = Column(String, default="New Chat")
   pinned = Column(Boolean, default=False)
   created_at = Column(DateTime, default=datetime.utcnow)
-
-  owner = relationship("User", back_populates="conversations")
-  messages = relationship(
-      "Message", back_populates="conversation", cascade="all, delete-orphan"
-  )
 
 
 class Message(Base):
   __tablename__ = "messages"
-
   id = Column(Integer, primary_key=True, index=True)
-  conversation_id = Column(String(50), ForeignKey("conversations.id"), index=True)
-  role = Column(String(20), nullable=False)  # 'user' or 'assistant'
+  conversation_id = Column(String, ForeignKey("conversations.id"), nullable=False)
+  role = Column(String, nullable=False)  # 'user' or 'assistant'
   content = Column(Text, nullable=False)
   timestamp = Column(DateTime, default=datetime.utcnow)
-
-  conversation = relationship("Conversation", back_populates="messages")
 
 
 class WeakTopic(Base):
   __tablename__ = "weak_topics"
-
   id = Column(Integer, primary_key=True, index=True)
-  user_id = Column(Integer, ForeignKey("users.id"), index=True)
+  user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
   topic_query = Column(Text, nullable=False)
-  created_at = Column(DateTime, default=datetime.utcnow)
-
-  owner = relationship("User", back_populates="weak_topics")
 
 
-# Initialize tables in DB
+# --- INITIALIZATION & SESSION HELPERS ---
 def init_db():
   Base.metadata.create_all(bind=engine)
 
@@ -102,6 +80,6 @@ def init_db():
 def get_db():
   db = SessionLocal()
   try:
-    return db
+    yield db
   finally:
-    pass  # Management handled in app context
+    db.close()

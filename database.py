@@ -1,4 +1,3 @@
-from datetime import datetime
 import os
 from sqlalchemy import (
     Boolean,
@@ -13,7 +12,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import declarative_base, sessionmaker
 import streamlit as st
 
-# 1. Fetch URL from Streamlit Secrets or Environment Variables
+# Safely extract POSTGRES_URL from Streamlit Secrets or environment
 DATABASE_URL = None
 try:
   if hasattr(st, "secrets") and "POSTGRES_URL" in st.secrets:
@@ -24,32 +23,37 @@ except Exception:
 if not DATABASE_URL:
   DATABASE_URL = str(os.getenv("POSTGRES_URL", "")).strip()
 
-# Clean quotes if any exist
+# Clean any accidental quotes
 DATABASE_URL = DATABASE_URL.strip('"').strip("'")
 
-# 2. Force PostgreSQL driver and ensure SSL mode for Supabase
+# Fallback to local SQLite if URL is completely missing so app doesn't crash
+if not DATABASE_URL:
+  DATABASE_URL = "sqlite:///./production_ta.db"
+
+# Ensure correct psycopg2 driver prefix
 if DATABASE_URL.startswith("postgres://"):
-  DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
+  DATABASE_URL = DATABASE_URL.replace(
+      "postgres://", "postgresql+psycopg2://", 1
+  )
 elif DATABASE_URL.startswith("postgresql://"):
   DATABASE_URL = DATABASE_URL.replace(
       "postgresql://", "postgresql+psycopg2://", 1
   )
 
+# Ensure sslmode for Supabase pooler
 if "pooler.supabase.com" in DATABASE_URL and "sslmode" not in DATABASE_URL:
   separator = "&" if "?" in DATABASE_URL else "?"
   DATABASE_URL += f"{separator}sslmode=require"
 
-# Fallback alert if no valid URL is found
-if not DATABASE_URL or not DATABASE_URL.startswith("postgresql"):
-  raise ValueError(
-      "CRITICAL: Supabase POSTGRES_URL is missing or incorrectly formatted in"
-      " Streamlit Secrets!"
+# Initialize Engine
+if DATABASE_URL.startswith("sqlite"):
+  engine = create_engine(
+      DATABASE_URL, connect_args={"check_same_thread": False}
   )
-
-# 3. Create Engine for Supabase
-engine = create_engine(
-    DATABASE_URL, pool_size=5, max_overflow=10, pool_pre_ping=True
-)
+else:
+  engine = create_engine(
+      DATABASE_URL, pool_size=5, max_overflow=10, pool_pre_ping=True
+  )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()

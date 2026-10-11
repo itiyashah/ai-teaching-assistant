@@ -3,14 +3,7 @@ import os
 import re
 import uuid
 from agent import build_teaching_assistant_graph
-from database import (
-    Conversation,
-    Message,
-    SessionLocal,
-    User,
-    WeakTopic,
-    init_db,
-)
+from database import Conversation, Message, User, WeakTopic, get_db, init_db
 from dotenv import load_dotenv
 from rag import setup_vector_database
 import streamlit as st
@@ -114,13 +107,13 @@ if "username" not in st.session_state:
 if "current_chat_id" not in st.session_state:
   st.session_state.current_chat_id = None
 
-db_session = SessionLocal()
+db_session = get_db()
 
 # --- LOGIN SCREEN ---
 if not st.session_state.logged_in:
   st.title("🌸 AI Teaching Assistant - Login")
   with st.form("login"):
-    uname = st.text_input("Enter Username:")
+    uname = st.text_input("Enter Username (e.g. tiya_shah)")
     if st.form_submit_button("Start Learning 💖"):
       cleaned_name = uname.strip()
       if cleaned_name:
@@ -135,7 +128,6 @@ if not st.session_state.logged_in:
 
         st.session_state.username = cleaned_name
         st.session_state.logged_in = True
-        db_session.close()
         st.rerun()
 else:
   user = (
@@ -147,7 +139,6 @@ else:
   # --- SIDEBAR & CHAT MANAGEMENT ---
   st.sidebar.title(f"👤 {user.username}")
   if st.sidebar.button("Log Out 🚪"):
-    db_session.close()
     st.session_state.logged_in = False
     st.session_state.username = ""
     st.session_state.current_chat_id = None
@@ -345,5 +336,3 @@ else:
       st.sidebar.markdown(f"{idx+1}. {wt}")
   else:
     st.sidebar.info("No weak topics logged yet.")
-
-db_session.close()

@@ -1,5 +1,6 @@
-from datetime import datetime
 import os
+from datetime import datetime
+from dotenv import load_dotenv
 from sqlalchemy import (
     Boolean,
     Column,
@@ -10,41 +11,21 @@ from sqlalchemy import (
     Text,
     create_engine,
 )
-from sqlalchemy.orm import declarative_base, sessionmaker
-import streamlit as st
+from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 
-# Retrieve database URL from Streamlit Secrets or environment variables
-DATABASE_URL = ""
-if hasattr(st, "secrets") and "POSTGRES_URL" in st.secrets:
-  DATABASE_URL = str(st.secrets["POSTGRES_URL"]).strip()
-elif os.getenv("POSTGRES_URL"):
-  DATABASE_URL = str(os.getenv("POSTGRES_URL")).strip()
+load_dotenv()
 
-# Clean quotes if any
-DATABASE_URL = DATABASE_URL.strip('"').strip("'")
+# Fallback to local SQLite DB if POSTGRES_URL isn't set in .env
+DATABASE_URL = os.getenv("POSTGRES_URL", "sqlite:///./production_ta.db")
 
-# Ensure proper driver prefix for SQLAlchemy PostgreSQL
-if DATABASE_URL.startswith("postgres://"):
-  DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
-elif DATABASE_URL.startswith("postgresql://") and not DATABASE_URL.startswith(
-    "postgresql+psycopg2://"
-):
-  DATABASE_URL = DATABASE_URL.replace(
-      "postgresql://", "postgresql+psycopg2://", 1
-  )
-
-# Default to local SQLite if not configured
-if not DATABASE_URL:
-  DATABASE_URL = "sqlite:///./production_ta.db"
-
-# Create SQLAlchemy Engine
+# SQLite needs a specific thread flag; PostgreSQL does not
 if DATABASE_URL.startswith("sqlite"):
   engine = create_engine(
       DATABASE_URL, connect_args={"check_same_thread": False}
   )
 else:
   engine = create_engine(
-      DATABASE_URL, pool_pre_ping=True, pool_size=5, max_overflow=10
+      DATABASE_URL, pool_size=10, max_overflow=20, pool_pre_ping=True
   )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -54,35 +35,65 @@ Base = declarative_base()
 # --- DATABASE MODELS ---
 class User(Base):
   __tablename__ = "users"
+
   id = Column(Integer, primary_key=True, index=True)
-  username = Column(String, unique=True, index=True, nullable=False)
+  username = Column(String(100), unique=True, index=True, nullable=False)
+  created_at = Column(DateTime, default=datetime.utcnow)
+
+  conversations = relationship(
+      "Conversation", back_populates="owner", cascade="all, delete-orphan"
+  )
+  weak_topics = relationship(
+      "WeakTopic", back_populates="owner", cascade="all, delete-orphan"
+  )
 
 
 class Conversation(Base):
   __tablename__ = "conversations"
-  id = Column(String, primary_key=True, index=True)
+
+  id = Column(String(50), primary_key=True, index=True)
   user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-  title = Column(String, default="New Chat")
+  title = Column(String(255), default="New Chat")
   pinned = Column(Boolean, default=False)
   created_at = Column(DateTime, default=datetime.utcnow)
+
+  owner = relationship("User", back_populates="conversations")
+  messages = relationship(
+      "Message", back_populates="conversation", cascade="all, delete-orphan"
+  )
 
 
 class Message(Base):
   __tablename__ = "messages"
+
   id = Column(Integer, primary_key=True, index=True)
-  conversation_id = Column(String, ForeignKey("conversations.id"), nullable=False)
-  role = Column(String, nullable=False)
+  conversation_id = Column(String(50), ForeignKey("conversations.id"), index=True)
+  role = Column(String(20), nullable=False)  # 'user' or 'assistant'
   content = Column(Text, nullable=False)
   timestamp = Column(DateTime, default=datetime.utcnow)
+
+  conversation = relationship("Conversation", back_populates="messages")
 
 
 class WeakTopic(Base):
   __tablename__ = "weak_topics"
+
   id = Column(Integer, primary_key=True, index=True)
-  user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+  user_id = Column(Integer, ForeignKey("users.id"), index=True)
   topic_query = Column(Text, nullable=False)
+  created_at = Column(DateTime, default=datetime.utcnow)
+
+  owner = relationship("User", back_populates="weak_topics")
 
 
-# --- FUNCTIONS ---
+# Initialize tables in DB
 def init_db():
   Base.metadata.create_all(bind=engine)
+
+
+def get_db():
+  db = SessionLocal()
+  try:
+    return db
+  finally:
+    pass  # Management handled in app context

@@ -15,8 +15,19 @@ from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 
 load_dotenv()
 
-# Fallback to local SQLite DB if POSTGRES_URL isn't set in .env
 DATABASE_URL = os.getenv("POSTGRES_URL", "sqlite:///./production_ta.db")
+
+# Force the psycopg2 driver for SQLAlchemy
+if DATABASE_URL.startswith("postgres://"):
+  DATABASE_URL = DATABASE_URL.replace(
+      "postgres://", "postgresql+psycopg2://", 1
+  )
+elif DATABASE_URL.startswith("postgresql://") and not DATABASE_URL.startswith(
+    "postgresql+psycopg2://"
+):
+  DATABASE_URL = DATABASE_URL.replace(
+      "postgresql://", "postgresql+psycopg2://", 1
+  )
 
 # SQLite needs a specific thread flag; PostgreSQL does not
 if DATABASE_URL.startswith("sqlite"):

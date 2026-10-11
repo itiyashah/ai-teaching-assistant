@@ -13,41 +13,39 @@ from sqlalchemy import (
 from sqlalchemy.orm import declarative_base, sessionmaker
 import streamlit as st
 
-# Safely extract POSTGRES_URL from Streamlit Secrets or environment
-DATABASE_URL = None
-try:
-  if hasattr(st, "secrets") and "POSTGRES_URL" in st.secrets:
-    DATABASE_URL = str(st.secrets["POSTGRES_URL"]).strip()
-except Exception:
-  pass
+# Retrieve database URL from Streamlit Secrets or environment variables
+DATABASE_URL = ""
+if hasattr(st, "secrets") and "POSTGRES_URL" in st.secrets:
+  DATABASE_URL = str(st.secrets["POSTGRES_URL"]).strip()
+elif os.getenv("POSTGRES_URL"):
+  DATABASE_URL = str(os.getenv("POSTGRES_URL")).strip()
 
-if not DATABASE_URL:
-  DATABASE_URL = str(os.getenv("POSTGRES_URL", "")).strip()
-
-# Clean any accidental quotes
+# Clean quotes if any
 DATABASE_URL = DATABASE_URL.strip('"').strip("'")
 
-# Fallback to local SQLite if URL is completely missing so app doesn't crash
-if not DATABASE_URL:
-  DATABASE_URL = "sqlite:///./production_ta.db"
-
-# Ensure correct psycopg2 driver prefix
+# Ensure proper driver prefix for SQLAlchemy PostgreSQL
 if DATABASE_URL.startswith("postgres://"):
-  DATABASE_URL = DATABASE_URL.replace(
-      "postgres://", "postgresql+psycopg2://", 1
-  )
-elif DATABASE_URL.startswith("postgresql://"):
+  DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
+elif DATABASE_URL.startswith("postgresql://") and not DATABASE_URL.startswith(
+    "postgresql+psycopg2://"
+):
   DATABASE_URL = DATABASE_URL.replace(
       "postgresql://", "postgresql+psycopg2://", 1
   )
 
-# Initialize Engine
+# Default to local SQLite if not configured
+if not DATABASE_URL:
+  DATABASE_URL = "sqlite:///./production_ta.db"
+
+# Create SQLAlchemy Engine
 if DATABASE_URL.startswith("sqlite"):
   engine = create_engine(
       DATABASE_URL, connect_args={"check_same_thread": False}
   )
 else:
-  engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+  engine = create_engine(
+      DATABASE_URL, pool_pre_ping=True, pool_size=5, max_overflow=10
+  )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
@@ -85,14 +83,6 @@ class WeakTopic(Base):
   topic_query = Column(Text, nullable=False)
 
 
-# --- INITIALIZATION & SESSION HELPERS ---
+# --- FUNCTIONS ---
 def init_db():
   Base.metadata.create_all(bind=engine)
-
-
-def get_db():
-  db = SessionLocal()
-  try:
-    yield db
-  finally:
-    db.close()

@@ -113,7 +113,7 @@ db_session = get_db()
 if not st.session_state.logged_in:
   st.title("🌸 AI Teaching Assistant - Login")
   with st.form("login"):
-    uname = st.text_input("Enter Username (e.g. tiya_shah)")
+    uname = st.text_input("Enter Username:")
     if st.form_submit_button("Start Learning 💖"):
       cleaned_name = uname.strip()
       if cleaned_name:

@@ -27,6 +27,8 @@ if not DATABASE_URL:
 # Force SQLAlchemy to use psycopg2 driver if connecting to PostgreSQL
 if DATABASE_URL.startswith("postgresql://"):
   DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
+  if "postgresql+psycopg2://" in DATABASE_URL and "?" not in DATABASE_URL:
+    DATABASE_URL += "?sslmode=require"
 
 # Engine setup based on database type
 if DATABASE_URL.startswith("sqlite"):

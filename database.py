@@ -13,24 +13,32 @@ from sqlalchemy import (
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 import streamlit as st
 
-# Safely fetch database URL from Streamlit Cloud Secrets or Environment Variables
+# Safely fetch and clean database URL
 DATABASE_URL = None
 try:
   if "POSTGRES_URL" in st.secrets:
-    DATABASE_URL = st.secrets["POSTGRES_URL"]
+    DATABASE_URL = str(st.secrets["POSTGRES_URL"]).strip()
 except Exception:
   pass
 
 if not DATABASE_URL:
-  DATABASE_URL = os.getenv("POSTGRES_URL", "sqlite:///./production_ta.db")
+  DATABASE_URL = str(os.getenv("POSTGRES_URL", "sqlite:///./production_ta.db")).strip()
 
-# Force SQLAlchemy to use psycopg2 driver if connecting to PostgreSQL
-if DATABASE_URL.startswith("postgresql://"):
+# Strip any accidental quotation marks wrapping the string
+DATABASE_URL = DATABASE_URL.strip('"').strip("'")
+
+# Ensure correct SQLAlchemy driver prefix for PostgreSQL
+if DATABASE_URL.startswith("postgres://"):
+  DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
+elif DATABASE_URL.startswith("postgresql://"):
   DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
-  if "postgresql+psycopg2://" in DATABASE_URL and "?" not in DATABASE_URL:
-    DATABASE_URL += "?sslmode=require"
 
-# Engine setup based on database type
+# Ensure sslmode is present for Supabase pooled connections
+if "pooler.supabase.com" in DATABASE_URL and "sslmode" not in DATABASE_URL:
+  separator = "&" if "?" in DATABASE_URL else "?"
+  DATABASE_URL += f"{separator}sslmode=require"
+
+# Engine setup
 if DATABASE_URL.startswith("sqlite"):
   engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 else:
@@ -40,7 +48,6 @@ else:
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
-
 
 # --- DATABASE MODELS ---
 class User(Base):

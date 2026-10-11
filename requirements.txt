@@ -9,4 +9,5 @@ pypdf
 python-dotenv
 sqlalchemy
 psycopg2-binary
+sentence-transformers
 langchain-core
